@@ -25,13 +25,45 @@ class GBATempSimpleCrawler:
             'Upgrade-Insecure-Requests': '1',
         }
 
-    async def fetch_thread(self, thread_url: str, max_pages: int = 1) -> List[GBATempPost]:
+    def get_last_page_number(self, html: str) -> int:
+        """
+        Extract the last page number from thread HTML.
+        Returns 1 if pagination not found.
+        """
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # Look for pagination
+        page_nav = soup.find('nav', class_='pageNav')
+        if not page_nav:
+            return 1
+
+        # Find all page links
+        page_links = page_nav.find_all('a', class_='pageNav-page')
+        if not page_links:
+            return 1
+
+        # Get the highest page number
+        max_page = 1
+        for link in page_links:
+            try:
+                page_num = int(link.get_text(strip=True))
+                max_page = max(max_page, page_num)
+            except ValueError:
+                continue
+
+        return max_page
+
+    async def fetch_thread(self, thread_url: str, max_pages: int = 1,
+                          cutoff_date=None, reverse: bool = False) -> List[GBATempPost]:
         """
         Fetch posts from a GBAtemp thread using HTTP requests.
 
         Args:
             thread_url: URL of the thread
             max_pages: Maximum number of pages to crawl
+            cutoff_date: Optional datetime - when reverse=True, stops crawling when posts older than this
+            reverse: If True, crawl from last page backwards (useful with cutoff_date)
 
         Returns:
             List of extracted posts
@@ -44,10 +76,30 @@ class GBATempSimpleCrawler:
             follow_redirects=True,
             verify=False  # Ignore SSL errors
         ) as client:
-            for page_num in range(1, max_pages + 1):
+            # Determine page range
+            if reverse:
+                # Fetch first page to get total page count
+                print(f"Detecting last page number...")
+                response = await client.get(thread_url)
+                if response.status_code != 200:
+                    print(f"  → Error: HTTP {response.status_code}")
+                    return []
+
+                last_page = self.get_last_page_number(response.text)
+                print(f"  → Found {last_page} pages")
+
+                # Crawl backwards from last page
+                start_page = last_page
+                end_page = max(1, last_page - max_pages + 1)
+                page_range = range(start_page, end_page - 1, -1)
+            else:
+                # Forward crawling (default)
+                page_range = range(1, max_pages + 1)
+
+            for page_num in page_range:
                 try:
                     # Build URL with page number
-                    if page_num == 1:
+                    if page_num == 1 and not reverse:
                         url = thread_url
                     else:
                         # Add page number to URL
@@ -73,6 +125,18 @@ class GBATempSimpleCrawler:
                     if not posts:
                         print(f"  → No posts found (end of thread or page format changed)")
                         break
+
+                    # If reverse crawling with cutoff_date, check for early stopping
+                    if reverse and cutoff_date:
+                        # Check if oldest post on this page is older than cutoff
+                        oldest_post = min(posts, key=lambda p: p.timestamp)
+                        if oldest_post.timestamp < cutoff_date:
+                            # Filter posts on this page
+                            recent_posts = [p for p in posts if p.timestamp >= cutoff_date]
+                            all_posts.extend(recent_posts)
+                            print(f"  → Extracted {len(recent_posts)}/{len(posts)} posts (hit date cutoff)")
+                            print(f"  → Stopping: oldest post ({oldest_post.timestamp}) < cutoff ({cutoff_date})")
+                            break
 
                     all_posts.extend(posts)
                     print(f"  → Extracted {len(posts)} posts")
@@ -104,7 +168,7 @@ async def main():
         '--pages',
         type=int,
         default=1,
-        help='Maximum pages to crawl (default: 1)'
+        help='Maximum pages to crawl (default: 1). Increase when using --since (e.g., --pages 10)'
     )
     parser.add_argument(
         '--min-score',
@@ -139,12 +203,34 @@ async def main():
     print("GBATEMP FORUM CRAWLER")
     print(f"{'='*70}\n")
 
+    # Parse cutoff date if --since is provided
+    cutoff_date = None
+    reverse_crawl = False
+    if args.since:
+        from dateparser import parse as parse_date
+        from datetime import timezone
+
+        cutoff_date = parse_date(args.since)
+        if cutoff_date:
+            # Make timezone-aware
+            if cutoff_date.tzinfo is None:
+                cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
+            reverse_crawl = True
+            print(f"🕒 Date filter active: showing posts since {args.since}")
+            print(f"   Parsed as: {cutoff_date}")
+            print(f"   Crawling backwards from newest posts...\n")
+
     # Fetch posts
     print(f"Target: {args.url}")
     print(f"Pages to crawl: {args.pages}")
     print(f"Min relevance score: {args.min_score}\n")
 
-    posts = await crawler.fetch_thread(args.url, max_pages=args.pages)
+    posts = await crawler.fetch_thread(
+        args.url,
+        max_pages=args.pages,
+        cutoff_date=cutoff_date,
+        reverse=reverse_crawl
+    )
 
     print(f"\n{'='*70}")
     print(f"EXTRACTED {len(posts)} TOTAL POSTS")
@@ -156,24 +242,18 @@ async def main():
         print("  - Thread doesn't exist")
         print("  - GBAtemp structure has changed")
         print("  - Network connectivity issues")
+        if args.since:
+            print(f"  - No posts found since {args.since} (try increasing --pages or different timeframe)")
         return
 
-    # Filter by date if specified
+    # Filter by date if not already done during crawl
     filtered_by_date = posts
-    if args.since:
-        from dateparser import parse as parse_date
-        from datetime import timezone
-
-        cutoff_date = parse_date(args.since)
-        if cutoff_date:
-            # Make timezone-aware
-            if cutoff_date.tzinfo is None:
-                cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
-
-            filtered_by_date = crawler.crawler.filter_posts_by_date(posts, after=cutoff_date)
-            print(f"Date filter (since {args.since}):")
-            print(f"  → Kept: {len(filtered_by_date)} posts")
-            print(f"  → Filtered out: {len(posts) - len(filtered_by_date)} posts\n")
+    if cutoff_date and not reverse_crawl:
+        # Manual filtering (fallback if not reverse crawling)
+        filtered_by_date = crawler.crawler.filter_posts_by_date(posts, after=cutoff_date)
+        print(f"Date filter (since {args.since}):")
+        print(f"  → Kept: {len(filtered_by_date)} posts")
+        print(f"  → Filtered out: {len(posts) - len(filtered_by_date)} posts\n")
 
     # Calculate relevance and filter
     relevant_posts = crawler.crawler.filter_posts_by_relevance(
