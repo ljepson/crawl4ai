@@ -34,21 +34,38 @@ python gbatemp_simple_crawler.py \
   --output results.json
 ```
 
-### Filter by Date
+### Filter by Date (with Smart Reverse Crawling)
+
+When you use `--since`, the crawler **automatically crawls backwards** from the newest posts, stopping early when it hits older content. This is **much faster** than crawling from page 1.
 
 ```bash
-# Posts from last 2 hours
+# Posts from last 2 hours (crawls last 5 pages backwards)
 python gbatemp_simple_crawler.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
   --since "2 hours ago" \
+  --pages 5 \
   --min-score 30
 
-# Posts since specific date
+# Posts since specific date (crawls last 10 pages)
 python gbatemp_simple_crawler.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
-  --since "2025-11-19" \
+  --since "2025-11-15" \
+  --pages 10 \
   --min-score 20
+
+# Posts from last week (increase --pages if thread is very active)
+python gbatemp_simple_crawler.py \
+  --url "https://gbatemp.net/threads/atmosphere.496832/" \
+  --since "1 week ago" \
+  --pages 20 \
+  --min-score 25
 ```
+
+**How it works:**
+1. Detects the last page number (e.g., page 527)
+2. Starts from page 527, works backwards to 518 (if --pages 10)
+3. Stops early if oldest post on a page is older than `--since`
+4. Saves bandwidth and time by not crawling ancient posts
 
 ### Show All Posts (Including Filtered)
 
