@@ -189,8 +189,17 @@ class GBATempCrawler:
                 if not post_id:
                     continue
 
-                # Extract author
+                # Extract author (try multiple selectors)
                 author_elem = article.find('span', itemprop='name')
+                if not author_elem:
+                    # Try alternate selector for thread starter posts
+                    author_elem = article.find('h4', class_='message-name')
+                    if author_elem:
+                        author_elem = author_elem.find('a')
+                if not author_elem:
+                    # Try username class
+                    author_elem = article.find('a', class_='username')
+
                 author = author_elem.get_text(strip=True) if author_elem else 'Unknown'
 
                 # Extract timestamp
@@ -199,9 +208,25 @@ class GBATempCrawler:
                 if not timestamp:
                     continue
 
-                # Extract post number
-                post_num_link = article.find('a', href=re.compile(r'/post-\d+'))
-                post_number = post_num_link.get_text(strip=True) if post_num_link else '?'
+                # Extract post number (look in the opposite/right side of header)
+                # Try to find the link in message-attribution-opposite first
+                post_num_link = article.find('ul', class_='message-attribution-opposite')
+                if post_num_link:
+                    post_num_a = post_num_link.find('a', href=re.compile(r'/post-\d+'))
+                    post_number = post_num_a.get_text(strip=True) if post_num_a else '?'
+                else:
+                    # Fallback: try to find any link with post number pattern
+                    post_num_link = article.find('a', href=re.compile(r'/post-\d+'))
+                    if post_num_link:
+                        # If text looks like a date, use post ID instead
+                        text = post_num_link.get_text(strip=True)
+                        if re.match(r'[A-Z][a-z]{2}\s+\d+,\s+\d{4}', text):
+                            # It's a date, use the post ID from data-content
+                            post_number = f"#{post_id}"
+                        else:
+                            post_number = text
+                    else:
+                        post_number = f"#{post_id}"
 
                 # Extract content
                 content_div = article.find('div', class_='bbWrapper')
