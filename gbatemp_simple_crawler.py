@@ -78,18 +78,54 @@ class GBATempSimpleCrawler:
         ) as client:
             # Determine page range
             if reverse:
-                # Fetch first page to get total page count
+                # Use GBAtemp's redirect quirk: request page-9999 and it redirects to last page
                 print(f"Detecting last page number...")
-                response = await client.get(thread_url)
+
+                # Build URL with impossibly high page number
+                if '?' in thread_url:
+                    probe_url = f"{thread_url}&page=9999"
+                else:
+                    base_url = thread_url.rstrip('/')
+                    probe_url = f"{base_url}/page-9999"
+
+                response = await client.get(probe_url)
                 if response.status_code != 200:
                     print(f"  → Error: HTTP {response.status_code}")
                     return []
 
-                last_page = self.get_last_page_number(response.text)
-                print(f"  → Found {last_page} pages")
+                # Parse last page number from redirected URL
+                # URL format: .../page-439 or .../page-439?query
+                import re
+                url_match = re.search(r'/page-(\d+)', str(response.url))
+                if url_match:
+                    last_page = int(url_match.group(1))
+                else:
+                    # Fallback: parse from HTML if redirect didn't work
+                    last_page = self.get_last_page_number(response.text)
 
-                # Crawl backwards from last page
-                start_page = last_page
+                print(f"  → Found {last_page} pages (via redirect from page-9999)")
+
+                # Extract posts from the redirected page (we already have the HTML!)
+                html = response.text
+                posts = self.crawler.extract_posts_from_html(html)
+
+                if posts:
+                    # If reverse crawling with cutoff_date, check for early stopping
+                    if cutoff_date:
+                        oldest_post = min(posts, key=lambda p: p.timestamp)
+                        if oldest_post.timestamp < cutoff_date:
+                            # Filter posts on this page
+                            recent_posts = [p for p in posts if p.timestamp >= cutoff_date]
+                            all_posts.extend(recent_posts)
+                            print(f"  → Extracted {len(recent_posts)}/{len(posts)} posts from page {last_page} (hit date cutoff)")
+                            # Stop early - no need to crawl further back
+                            return all_posts
+
+                    all_posts.extend(posts)
+                    print(f"  → Extracted {len(posts)} posts from page {last_page}")
+
+                # Crawl backwards from (last_page - 1) since we already processed last_page
+                start_page = last_page - 1
                 end_page = max(1, last_page - max_pages + 1)
                 page_range = range(start_page, end_page - 1, -1)
             else:
