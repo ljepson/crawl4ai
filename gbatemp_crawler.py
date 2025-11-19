@@ -211,22 +211,37 @@ class GBATempCrawler:
                 # Extract post number (look in the opposite/right side of header)
                 # Try to find the link in message-attribution-opposite first
                 post_num_link = article.find('ul', class_='message-attribution-opposite')
+                post_number = None
+
                 if post_num_link:
-                    post_num_a = post_num_link.find('a', href=re.compile(r'/post-\d+'))
-                    post_number = post_num_a.get_text(strip=True) if post_num_a else '?'
-                else:
-                    # Fallback: try to find any link with post number pattern
+                    # Find all links and get the one with text starting with #
+                    all_links = post_num_link.find_all('a', href=re.compile(r'/post-\d+'))
+                    for link in all_links:
+                        text = link.get_text(strip=True)
+                        if text and text.startswith('#'):
+                            post_number = text
+                            break
+
+                # Fallback methods if not found
+                if not post_number:
+                    # Try to find any link with post number pattern
                     post_num_link = article.find('a', href=re.compile(r'/post-\d+'))
                     if post_num_link:
-                        # If text looks like a date, use post ID instead
                         text = post_num_link.get_text(strip=True)
-                        if re.match(r'[A-Z][a-z]{2}\s+\d+,\s+\d{4}', text):
-                            # It's a date, use the post ID from data-content
-                            post_number = f"#{post_id}"
+                        if text:
+                            # If text looks like a date, use post ID instead
+                            if re.match(r'[A-Z][a-z]{2}\s+\d+,\s+\d{4}', text):
+                                post_number = f"#{post_id}"
+                            else:
+                                post_number = text
                         else:
-                            post_number = text
+                            post_number = f"#{post_id}"
                     else:
                         post_number = f"#{post_id}"
+
+                # Final fallback
+                if not post_number:
+                    post_number = f"#{post_id}"
 
                 # Extract content
                 content_div = article.find('div', class_='bbWrapper')
