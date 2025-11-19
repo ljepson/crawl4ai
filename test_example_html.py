@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test parser on the example HTML file provided by user."""
 
-from gbatemp_crawler import GBATempCrawler
+from gbatemp import GBATempCrawler
 
 def main():
     # Read the example HTML

@@ -27,7 +27,7 @@ pip install beautifulsoup4 lxml dateparser httpx
 ### Basic Usage
 
 ```bash
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
   --pages 5 \
   --min-score 20 \
@@ -40,21 +40,21 @@ When you use `--since`, the crawler **automatically crawls backwards** from the 
 
 ```bash
 # Posts from last 2 hours (crawls last 5 pages backwards)
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
   --since "2 hours ago" \
   --pages 5 \
   --min-score 30
 
 # Posts since specific date (crawls last 10 pages)
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
   --since "2025-11-15" \
   --pages 10 \
   --min-score 20
 
 # Posts from last week (increase --pages if thread is very active)
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/atmosphere.496832/" \
   --since "1 week ago" \
   --pages 20 \
@@ -70,7 +70,7 @@ python gbatemp_simple_crawler.py \
 ### Show All Posts (Including Filtered)
 
 ```bash
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/sys-patch.633517/" \
   --show-all
 ```
@@ -117,18 +117,25 @@ TOP RELEVANT POSTS
 - Just asking for clarification
 - Ends with "?"
 
-## 📁 Files
+## 📁 Package Structure
 
-- `gbatemp_crawler.py` - Core parser and relevance scoring
-- `gbatemp_simple_crawler.py` - CLI tool (HTTP-based)
-- `test_parser.py` - Test suite with sample HTML
-- `test_samples.html` - Example posts for testing
+```
+gbatemp/
+  __init__.py       - Package exports
+  parser.py         - GBATempPost class and relevance scoring
+  crawler.py        - HTML extraction and HTTP crawling
+  cli.py            - Command-line interface
+  playwright.py     - Browser-based crawler (optional)
+
+crawl_gbatemp.py    - Simple CLI wrapper (main entry point)
+test_example_html.py - Test suite with sample HTML
+```
 
 ## 🔧 Programmatic Usage
 
 ```python
 import asyncio
-from gbatemp_simple_crawler import GBATempSimpleCrawler
+from gbatemp import GBATempSimpleCrawler
 
 async def main():
     crawler = GBATempSimpleCrawler()
@@ -168,7 +175,7 @@ Run from your personal machine (not a cloud server/container)
 3. Parse locally:
 
 ```python
-from gbatemp_crawler import GBATempCrawler
+from gbatemp import GBATempCrawler
 
 crawler = GBATempCrawler()
 
@@ -183,7 +190,7 @@ for post in relevant:
 ```
 
 ### Option 3: Add Delays
-Modify `gbatemp_simple_crawler.py` to add longer delays:
+Modify `gbatemp/crawler.py` to add longer delays:
 
 ```python
 await asyncio.sleep(5)  # Wait 5 seconds between requests
@@ -191,7 +198,7 @@ await asyncio.sleep(5)  # Wait 5 seconds between requests
 
 ## 📈 Adjusting Relevance Thresholds
 
-Edit `gbatemp_crawler.py` → `GBATempPost.calculate_relevance()`:
+Edit `gbatemp/parser.py` → `GBATempPost.calculate_relevance()`:
 
 ```python
 # Make scoring stricter
@@ -211,7 +218,7 @@ if content_len < 50:
 
 ### 1. Find Latest Updates
 ```bash
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/forums/nintendo-switch.283/" \
   --since "1 hour ago" \
   --min-score 50
@@ -219,7 +226,7 @@ python gbatemp_simple_crawler.py \
 
 ### 2. Extract Technical Posts Only
 ```bash
-python gbatemp_simple_crawler.py \
+python crawl_gbatemp.py \
   --url "https://gbatemp.net/threads/atmosphere.634821/" \
   --min-score 60  # Very strict
 ```
@@ -228,7 +235,7 @@ python gbatemp_simple_crawler.py \
 ```bash
 #!/bin/bash
 for thread in thread1 thread2 thread3; do
-  python gbatemp_simple_crawler.py \
+  python crawl_gbatemp.py \
     --url "https://gbatemp.net/threads/$thread/" \
     --since "30 minutes ago" \
     --output "${thread}_results.json"
