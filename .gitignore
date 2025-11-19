@@ -265,3 +265,4 @@ tests/**/benchmark_reports
 
 docs/**/data
 .codecat/
+test_results.json
